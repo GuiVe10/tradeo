@@ -780,6 +780,7 @@
             <div class="item">
               <div class="item-info">
                 <div><b>${esc(c.nombre)}</b></div>
+                ${c.direccion ? `<div class="small">${esc(c.direccion)}</div>`:''}
                 ${c.whatsapp ? `<div class="small">${wa?`<a class="wa-link" href="${wa}" target="_blank" rel="noopener">${esc(c.whatsapp)}</a>`:esc(c.whatsapp)}</div>`:''}
               </div>
               <div class="item-actions">
@@ -787,6 +788,8 @@
                 <button class="icon-btn danger" data-del-cli="${c.id}" aria-label="Eliminar">${iconTrash()}</button>
               </div>
             </div>
+            ${wa ? `<a class="btn btn-ghost btn-block" href="${wa}" target="_blank" rel="noopener" style="margin-top:8px">Escribir por WhatsApp</a>`:''}
+            <button class="btn btn-accent btn-block" data-pedido-cli="${c.id}" style="margin-top:8px">Hacer pedido</button>
           </div>`;
       });
       cont.innerHTML = html;
@@ -802,6 +805,15 @@
           saveState(); renderAll();
         };
       });
+      cont.querySelectorAll('[data-pedido-cli]').forEach(b=>{
+        b.onclick = ()=>hacerPedidoDesdeCliente(b.dataset.pedidoCli);
+      });
+    }
+
+    function hacerPedidoDesdeCliente(clienteId){
+      currentPedidoClienteId = clienteId;
+      switchTab('pedidos');
+      renderPedidos();
     }
 
     function renderReparto(){
@@ -980,6 +992,10 @@
           <input type="text" id="f-nombre" value="${esc(c?c.nombre:'')}" autocomplete="off">
         </div>
         <div class="field">
+          <label>Dirección (opcional)</label>
+          <input type="text" id="f-dir" value="${esc(c?c.direccion:'')}" autocomplete="off">
+        </div>
+        <div class="field">
           <label>WhatsApp (opcional, con código de país)</label>
           <input type="tel" id="f-wa" value="${esc(c?c.whatsapp:'')}" placeholder="541112345678" autocomplete="off">
         </div>
@@ -991,10 +1007,11 @@
       document.getElementById('f-cancel').onclick = closeModal;
       document.getElementById('f-save').onclick = ()=>{
         const nombre = document.getElementById('f-nombre').value.trim();
+        const dir = document.getElementById('f-dir').value.trim();
         const wa = document.getElementById('f-wa').value.trim();
         if(!nombre){ alert('Falta el nombre.'); return; }
-        if(c){ c.nombre = nombre; c.whatsapp = wa; }
-        else state.clientes.push({id: uid(), nombre, whatsapp: wa});
+        if(c){ c.nombre = nombre; c.whatsapp = wa; c.direccion = dir; }
+        else state.clientes.push({id: uid(), nombre, whatsapp: wa, direccion: dir});
         saveState(); closeModal(); renderAll();
       };
     }
