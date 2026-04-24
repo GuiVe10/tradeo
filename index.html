@@ -315,14 +315,18 @@
     <!-- OFERTA -->
     <section class="tab active" id="tab-oferta">
       <div class="row-between">
-        <h2>Oferta del día</h2>
-        <button class="btn btn-ghost btn-sm" id="btn-limpiar-dia">Limpiar día</button>
+        <h2>Oferta</h2>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" id="btn-toggle-compacto">Compacto</button>
+          <button class="btn btn-ghost btn-sm" id="btn-limpiar-dia">Nueva oferta</button>
+        </div>
       </div>
       <div class="margin-bar">
         <label for="margen-global">Margen general</label>
         <input type="number" id="margen-global" min="0" step="1" inputmode="numeric">
         <span class="suffix">%</span>
       </div>
+      <div id="repetir-oferta-box"></div>
       <button class="btn btn-primary btn-block" id="btn-add-oferta">+ Agregar producto</button>
       <div class="hr"></div>
       <div id="oferta-list"></div>
@@ -340,7 +344,7 @@
       </div>
       <div id="pedido-form"></div>
       <div class="hr"></div>
-      <h2>Pedidos del día</h2>
+      <h2>Pedidos cargados</h2>
       <div id="pedidos-list"></div>
     </section>
 
@@ -408,7 +412,9 @@
       pedidos: [],
       firma: 'Emilio',
       textoInicial: 'Hola! Hoy tengo:',
-      textoFinal: 'Avisame si querés algo y te acerco.'
+      textoFinal: 'Avisame si querés algo y te acerco.',
+      modoCompacto: false,
+      ofertaAnterior: []
     };
     let state = loadState();
     let currentPedidoClienteId = null;
@@ -526,9 +532,19 @@
 
     function renderOferta(){
       document.getElementById('margen-global').value = state.margenGlobal;
+      const btnCompacto = document.getElementById('btn-toggle-compacto');
+      if(btnCompacto) btnCompacto.textContent = state.modoCompacto ? 'Detallado' : 'Compacto';
+      const repBox = document.getElementById('repetir-oferta-box');
+      if(state.oferta.length === 0 && Array.isArray(state.ofertaAnterior) && state.ofertaAnterior.length > 0){
+        repBox.innerHTML = `<button class="btn btn-ghost btn-block" id="btn-repetir-oferta" style="margin-bottom:12px">Repetir oferta anterior (${state.ofertaAnterior.length} productos)</button>`;
+      } else {
+        repBox.innerHTML = '';
+      }
       const cont = document.getElementById('oferta-list');
       if(state.oferta.length === 0){
         cont.innerHTML = '<div class="empty">Todavía no cargaste productos. Tocá <b>+ Agregar producto</b>.</div>';
+        const btn = document.getElementById('btn-repetir-oferta');
+        if(btn) btn.onclick = repetirOfertaAnterior;
         return;
       }
       const porProv = {};
@@ -543,15 +559,17 @@
         porProv[pid].forEach(o=>{
           const pv = precioVenta(o);
           const tieneInd = o.margenIndividual !== undefined && o.margenIndividual !== null && o.margenIndividual !== '';
-          const margenTxt = tieneInd ? `<span class="chip">${esc(o.margenIndividual)}%</span>` : '';
+          const margenTxt = (!state.modoCompacto && tieneInd) ? `<span class="chip">${esc(o.margenIndividual)}%</span>` : '';
           const manualTxt = esPrecioManual(o) ? `<span class="chip chip-manual">ajustado</span>` : '';
+          const compraLine = state.modoCompacto ? '' : `<div class="price-compra">Compra ${fmtPrice(o.precioCompra)}</div>`;
+          const prefijoVenta = state.modoCompacto ? '' : 'Venta ';
           html += `
             <div class="item">
               <div class="item-info">
                 <div><b>${esc(firstUpper(o.producto))}</b> <span class="small">x ${esc(o.unidad)}</span>${margenTxt}</div>
-                <div class="price-compra">Compra ${fmtPrice(o.precioCompra)}</div>
+                ${compraLine}
                 <div class="price-venta">
-                  <button class="price-edit-btn" data-round-oferta="${o.id}" title="Tocar para redondear">Venta ${fmtPrice(pv)} ${iconPencilSmall()}</button>
+                  <button class="price-edit-btn" data-round-oferta="${o.id}" title="Tocar para redondear">${prefijoVenta}${fmtPrice(pv)} ${iconPencilSmall()}</button>
                   ${manualTxt}
                 </div>
               </div>
@@ -581,6 +599,8 @@
           saveState(); renderAll();
         };
       });
+      const btn = document.getElementById('btn-repetir-oferta');
+      if(btn) btn.onclick = repetirOfertaAnterior;
     }
 
     function renderPedidos(){
@@ -1083,11 +1103,34 @@
     }
 
     function limpiarDia(){
-      if(!confirm('Esto borra la oferta y los pedidos del día. Proveedores y clientes se mantienen. ¿Continuar?')) return;
+      if(!confirm('Esto borra la oferta y los pedidos actuales. Proveedores y clientes se mantienen. ¿Continuar?')) return;
+      if(state.oferta.length > 0) state.ofertaAnterior = clone(state.oferta);
       state.oferta = [];
       state.pedidos = [];
       saveState(); renderAll();
-      toast('Día limpiado');
+      toast('Lista para nueva oferta');
+    }
+
+    function repetirOfertaAnterior(){
+      if(!Array.isArray(state.ofertaAnterior) || state.ofertaAnterior.length === 0) return;
+      const provIds = new Set(state.proveedores.map(p=>p.id));
+      const nuevos = state.ofertaAnterior
+        .filter(o=>provIds.has(o.proveedorId))
+        .map(o=>({
+          id: uid(),
+          proveedorId: o.proveedorId,
+          producto: o.producto,
+          unidad: o.unidad,
+          precioCompra: o.precioCompra,
+          margenIndividual: o.margenIndividual
+        }));
+      if(nuevos.length === 0){
+        alert('La oferta anterior ya no tiene proveedores válidos.');
+        return;
+      }
+      state.oferta = nuevos;
+      saveState(); renderAll();
+      toast('Oferta repetida');
     }
 
     function exportarDatos(){
@@ -1191,6 +1234,11 @@
     document.getElementById('btn-add-cliente').addEventListener('click', ()=>openClienteModal());
     document.getElementById('btn-copiar-oferta').addEventListener('click', copiarOferta);
     document.getElementById('btn-limpiar-dia').addEventListener('click', limpiarDia);
+    document.getElementById('btn-toggle-compacto').addEventListener('click', ()=>{
+      state.modoCompacto = !state.modoCompacto;
+      saveState();
+      renderOferta();
+    });
     document.getElementById('margen-global').addEventListener('input', e=>{
       state.margenGlobal = Number(e.target.value)||0;
       saveState();
