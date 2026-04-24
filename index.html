@@ -1054,13 +1054,11 @@
           <div class="small">Comprado: ${fmtPrice(tot.comp)}</div>
           <div class="small">Vendido: ${fmtPrice(tot.vend)}</div>
           <div class="small">Ganancia: ${fmtPrice(tot.gan)}</div>`;
-      const historialBtn = state.historial.length > 0
-        ? `
-          <div class="field">
-            <label>Historial</label>
-            <button class="btn btn-ghost btn-block" id="btn-ver-historial">Ver historial</button>
-          </div>`
-        : '';
+      const historialBtn = `
+        <div class="field">
+          <label>Historial</label>
+          <button class="btn btn-ghost btn-block" id="btn-ver-historial">Ver historial${state.historial.length > 0 ? ` (${state.historial.length})` : ''}</button>
+        </div>`;
       openModal(`
         <h3>Ajustes</h3>
         <div class="field">
@@ -1105,7 +1103,10 @@
       document.getElementById('f-import-file').onchange = e=>importarDatos(e.target.files[0]);
       document.getElementById('btn-borrar-todo').onclick = borrarTodo;
       const btnH = document.getElementById('btn-ver-historial');
-      if(btnH) btnH.onclick = ()=>{ closeModal(); openHistorialModal(); };
+      if(btnH) btnH.onclick = ()=>{
+        if(state.historial.length === 0){ toast('Historial vacío'); return; }
+        closeModal(); openHistorialModal();
+      };
     }
 
     // ============================================================
