@@ -855,6 +855,25 @@
       m.innerHTML = `<div class="modal">${html}</div>`;
       m.classList.add('active');
       m.onclick = e=>{ if(e.target===m) closeModal(); };
+      const campos = m.querySelectorAll('input:not([type=file]), textarea, select');
+      campos.forEach((el, i)=>{
+        const siguiente = campos[i+1];
+        el.setAttribute('enterkeyhint', siguiente ? 'next' : 'done');
+        if(el.tagName !== 'TEXTAREA'){
+          el.addEventListener('keydown', ev=>{
+            if(ev.key === 'Enter'){
+              ev.preventDefault();
+              if(siguiente) siguiente.focus();
+              else el.blur();
+            }
+          });
+        }
+        el.addEventListener('focus', ()=>{
+          setTimeout(()=>{
+            try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){}
+          }, 300);
+        });
+      });
     }
 
     function openOfertaModal(id){
