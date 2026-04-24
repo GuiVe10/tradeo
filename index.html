@@ -414,7 +414,9 @@
       textoInicial: 'Hola! Hoy tengo:',
       textoFinal: 'Avisame si querés algo y te acerco.',
       modoCompacto: false,
-      ofertaAnterior: []
+      ofertaAnterior: [],
+      historial: [],
+      proximoNroOperacion: 1
     };
     let state = loadState();
     let currentPedidoClienteId = null;
@@ -998,6 +1000,25 @@
     }
 
     function openAjustesModal(){
+      const tot = state.historial.reduce((acc, h)=>({
+        comp: acc.comp + Number(h.totalComprado||0),
+        vend: acc.vend + Number(h.totalVendido||0),
+        gan: acc.gan + Number(h.ganancia||0)
+      }), {comp:0, vend:0, gan:0});
+      const balanceHtml = state.historial.length === 0
+        ? `<div class="small">Todavía no hay operaciones cerradas.</div>`
+        : `
+          <div class="small">Operaciones cerradas: ${state.historial.length}</div>
+          <div class="small">Comprado: ${fmtPrice(tot.comp)}</div>
+          <div class="small">Vendido: ${fmtPrice(tot.vend)}</div>
+          <div class="small">Ganancia: ${fmtPrice(tot.gan)}</div>`;
+      const historialBtn = state.historial.length > 0
+        ? `
+          <div class="field">
+            <label>Historial</label>
+            <button class="btn btn-ghost btn-block" id="btn-ver-historial">Ver historial</button>
+          </div>`
+        : '';
       openModal(`
         <h3>Ajustes</h3>
         <div class="field">
@@ -1012,6 +1033,11 @@
           <label>Texto final (lista para clientes)</label>
           <textarea id="f-texto-final" rows="2" placeholder="Avisame si querés algo y te acerco.">${esc(state.textoFinal)}</textarea>
         </div>
+        <div class="field">
+          <label>Balance total</label>
+          ${balanceHtml}
+        </div>
+        ${historialBtn}
         <div class="stack">
           <button class="btn btn-ghost btn-block" id="btn-exportar">Exportar datos</button>
           <button class="btn btn-ghost btn-block" id="btn-importar">Importar datos</button>
@@ -1036,6 +1062,8 @@
       document.getElementById('btn-importar').onclick = ()=>document.getElementById('f-import-file').click();
       document.getElementById('f-import-file').onchange = e=>importarDatos(e.target.files[0]);
       document.getElementById('btn-borrar-todo').onclick = borrarTodo;
+      const btnH = document.getElementById('btn-ver-historial');
+      if(btnH) btnH.onclick = ()=>{ closeModal(); openHistorialModal(); };
     }
 
     // ============================================================
@@ -1122,12 +1150,169 @@
     }
 
     function limpiarDia(){
-      if(!confirm('Esto borra la oferta y los pedidos actuales. Proveedores y clientes se mantienen. ¿Continuar?')) return;
+      if(state.pedidos.length === 0){
+        if(!confirm('Esto borra la oferta y los pedidos actuales. Proveedores y clientes se mantienen. ¿Continuar?')) return;
+        if(state.oferta.length > 0) state.ofertaAnterior = clone(state.oferta);
+        state.oferta = [];
+        state.pedidos = [];
+        saveState(); renderAll();
+        toast('Lista para nueva oferta');
+        return;
+      }
+      const balance = calcularBalanceActual();
+      openCerrarOperacionModal(balance);
+    }
+
+    function calcularBalanceActual(){
+      let totalComprado = 0;
+      let totalVendido = 0;
+      const ofertaIds = new Set();
+      state.pedidos.forEach(p=>{
+        p.items.forEach(it=>{
+          const of = state.oferta.find(o=>o.id===it.ofertaId);
+          if(!of) return;
+          totalComprado += Number(of.precioCompra) * Number(it.cantidad);
+          totalVendido += precioVenta(of) * Number(it.cantidad);
+          ofertaIds.add(of.id);
+        });
+      });
+      return {
+        totalComprado,
+        totalVendido,
+        ganancia: totalVendido - totalComprado,
+        cantClientes: state.pedidos.length,
+        cantProductos: ofertaIds.size
+      };
+    }
+
+    function openCerrarOperacionModal(balance){
+      openModal(`
+        <h3>Cerrar operación</h3>
+        <p class="small" style="margin:0 0 12px">Este es el balance de la operación actual:</p>
+        <div class="card">
+          <div class="item"><span>Comprado</span><b>${fmtPrice(balance.totalComprado)}</b></div>
+          <div class="item"><span>Vendido</span><b>${fmtPrice(balance.totalVendido)}</b></div>
+          <div class="item"><span>Ganancia</span><b class="price-venta">${fmtPrice(balance.ganancia)}</b></div>
+          <div class="item"><span>Clientes</span><b>${balance.cantClientes}</b></div>
+          <div class="item"><span>Productos</span><b>${balance.cantProductos}</b></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="f-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="f-cerrar">Cerrar operación</button>
+        </div>
+      `);
+      document.getElementById('f-cancel').onclick = closeModal;
+      document.getElementById('f-cerrar').onclick = ()=>confirmarCierre(balance);
+    }
+
+    function confirmarCierre(balance){
+      const detalle = state.pedidos.map(p=>{
+        const cli = state.clientes.find(c=>c.id===p.clienteId);
+        return {
+          cliente: cli ? cli.nombre : 'Cliente eliminado',
+          items: p.items.map(it=>{
+            const of = state.oferta.find(o=>o.id===it.ofertaId);
+            if(!of) return null;
+            const prov = state.proveedores.find(pr=>pr.id===of.proveedorId);
+            return {
+              producto: of.producto,
+              unidad: of.unidad,
+              cantidad: Number(it.cantidad),
+              precioCompra: Number(of.precioCompra),
+              precioVenta: precioVenta(of),
+              proveedor: prov ? prov.nombre : 'Proveedor eliminado'
+            };
+          }).filter(x=>x)
+        };
+      });
+      const entrada = {
+        id: uid(),
+        nro: state.proximoNroOperacion,
+        fechaISO: new Date().toISOString(),
+        totalComprado: balance.totalComprado,
+        totalVendido: balance.totalVendido,
+        ganancia: balance.ganancia,
+        cantClientes: balance.cantClientes,
+        cantProductos: balance.cantProductos,
+        detalle
+      };
+      state.historial.push(entrada);
+      state.proximoNroOperacion += 1;
       if(state.oferta.length > 0) state.ofertaAnterior = clone(state.oferta);
       state.oferta = [];
       state.pedidos = [];
-      saveState(); renderAll();
-      toast('Lista para nueva oferta');
+      saveState(); closeModal(); renderAll();
+      toast('Operación cerrada');
+    }
+
+    function openHistorialModal(){
+      if(state.historial.length === 0){ closeModal(); toast('Historial vacío'); return; }
+      const ordenado = [...state.historial].sort((a,b)=>b.nro - a.nro);
+      const fmtFecha = iso => {
+        try{
+          return new Intl.DateTimeFormat('es-AR', {
+            day:'2-digit', month:'2-digit', year:'numeric',
+            hour:'2-digit', minute:'2-digit'
+          }).format(new Date(iso));
+        } catch(e){ return iso; }
+      };
+      let html = '<h3>Historial de operaciones</h3>';
+      ordenado.forEach(op=>{
+        const detId = `det-${op.id}`;
+        let detHtml = '';
+        (op.detalle||[]).forEach(d=>{
+          const itemsHtml = (d.items||[]).map(it=>
+            `<div class="small">${esc(firstUpper(it.producto))} x ${it.cantidad} ${esc(plural(it.unidad, it.cantidad))} — ${fmtPrice(it.precioVenta)} c/u (proveedor: ${esc(it.proveedor||'—')})</div>`
+          ).join('');
+          detHtml += `<div style="margin-top:10px"><b>${esc(d.cliente)}</b></div>${itemsHtml}`;
+        });
+        html += `
+          <div class="card">
+            <div class="row-between" style="margin-bottom:4px">
+              <h3 style="margin:0">Operación ${op.nro}</h3>
+              <div class="item-actions">
+                <button class="icon-btn danger" data-del-op="${op.id}" aria-label="Eliminar">${iconTrash()}</button>
+              </div>
+            </div>
+            <div class="small">${esc(fmtFecha(op.fechaISO))}</div>
+            <div class="price-venta" style="margin-top:4px">Ganancia: ${fmtPrice(op.ganancia)}</div>
+            <div class="small">Vendido ${fmtPrice(op.totalVendido)} · ${op.cantClientes} clientes · ${op.cantProductos} productos</div>
+            <button class="btn btn-ghost btn-sm" data-toggle-op="${detId}" style="margin-top:8px">Ver detalle</button>
+            <div id="${detId}" style="display:none;margin-top:8px">${detHtml}</div>
+          </div>`;
+      });
+      html += '<button class="btn btn-ghost btn-block" id="btn-cerrar-hist">Cerrar</button>';
+      openModal(html);
+      document.getElementById('btn-cerrar-hist').onclick = closeModal;
+      document.querySelectorAll('[data-toggle-op]').forEach(b=>{
+        b.onclick = ()=>{
+          const el = document.getElementById(b.dataset.toggleOp);
+          if(!el) return;
+          if(el.style.display === 'none'){
+            el.style.display = 'block';
+            b.textContent = 'Ocultar detalle';
+          } else {
+            el.style.display = 'none';
+            b.textContent = 'Ver detalle';
+          }
+        };
+      });
+      document.querySelectorAll('[data-del-op]').forEach(b=>{
+        b.onclick = ()=>{
+          const id = b.dataset.delOp;
+          const op = state.historial.find(h=>h.id===id);
+          if(!op) return;
+          if(!confirm(`¿Eliminar Operación ${op.nro}? No se puede deshacer.`)) return;
+          state.historial = state.historial.filter(h=>h.id!==id);
+          saveState();
+          if(state.historial.length === 0){
+            closeModal();
+            toast('Historial vacío');
+          } else {
+            openHistorialModal();
+          }
+        };
+      });
     }
 
     function repetirOfertaAnterior(){
