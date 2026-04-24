@@ -656,6 +656,31 @@
       html += '<div class="modal-actions"><button class="btn btn-primary btn-block" id="btn-guardar-pedido">Guardar pedido</button></div></div>';
       cont.innerHTML = html;
       document.getElementById('btn-guardar-pedido').onclick = guardarPedido;
+      cont.querySelectorAll('input[data-oferta-id]').forEach(inp=>{
+        inp.addEventListener('input', ()=>autoSaveItemPedido(inp));
+      });
+    }
+
+    function autoSaveItemPedido(inp){
+      const cant = Math.floor(Number(inp.value)) || 0;
+      const ofertaId = inp.dataset.ofertaId;
+      let ped = state.pedidos.find(p=>p.clienteId===currentPedidoClienteId);
+      if(cant > 0){
+        if(!ped){
+          ped = {id: uid(), clienteId: currentPedidoClienteId, items: []};
+          state.pedidos.push(ped);
+        }
+        const existente = ped.items.find(i=>i.ofertaId===ofertaId);
+        if(existente) existente.cantidad = cant;
+        else ped.items.push({ofertaId, cantidad: cant});
+      } else if(ped){
+        ped.items = ped.items.filter(i=>i.ofertaId!==ofertaId);
+        if(ped.items.length === 0){
+          state.pedidos = state.pedidos.filter(p=>p.clienteId !== currentPedidoClienteId);
+        }
+      }
+      saveState();
+      renderPedidosList();
     }
 
     function renderPedidosList(){
